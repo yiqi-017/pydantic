@@ -517,7 +517,7 @@ class GenerateJsonSchema:
                 if (
                     json_schema is not None
                     and ser_schema.get('when_used') in ('unless-none', 'json-unless-none')
-                    and _is_nullable_schema(schema_or_field)
+                    and _schema_can_be_none(schema_or_field)
                 ):
                     json_schema = self.get_union_of_schemas([{'type': 'null'}, json_schema])
             if json_schema is None:
@@ -3258,20 +3258,24 @@ def _get_ser_schema_for_default_value(schema: CoreSchema) -> core_schema.PlainSe
         return _get_ser_schema_for_default_value(schema['schema'])
 
 
-def _is_nullable_schema(schema: CoreSchemaOrField) -> bool:
-    """Whether the schema is a `'nullable'` schema, possibly wrapped in default, validator function, chain,
+def _schema_can_be_none(schema: CoreSchemaOrField) -> bool:
+    """Whether the schema accepts `None`, possibly wrapped in default, validator function, chain,
     lax-or-strict and JSON-or-Python schemas.
 
     For the latter three, the same inner schema as the one used to generate the serialization JSON Schema
     is checked (see the corresponding `GenerateJsonSchema` methods).
     """
     if schema['type'] == 'default' or _core_utils.is_function_with_inner_schema(schema):
-        return _is_nullable_schema(schema['schema'])
+        return _schema_can_be_none(schema['schema'])
     if schema['type'] == 'chain':
-        return _is_nullable_schema(schema['steps'][-1])
+        return _schema_can_be_none(schema['steps'][-1])
     if schema['type'] == 'lax-or-strict':
         # See TODO in `GenerateJsonSchema.lax_or_strict_schema()`:
-        return _is_nullable_schema(schema['strict_schema'] if schema.get('strict', False) else schema['lax_schema'])
+        return _schema_can_be_none(schema['strict_schema'] if schema.get('strict', False) else schema['lax_schema'])
     if schema['type'] == 'json-or-python':
-        return _is_nullable_schema(schema['json_schema'])
-    return schema['type'] == 'nullable'
+        return _schema_can_be_none(schema['json_schema'])
+    if schema['type'] in ('nullable', 'any', 'none'):
+        return True
+    if schema['type'] == 'literal':
+        return any(value is None for value in schema['expected'])
+    return False

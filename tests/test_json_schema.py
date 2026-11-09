@@ -6989,6 +6989,37 @@ def test_unless_none_serializer_on_wrapped_nullable_schema() -> None:
     }
 
 
+@pytest.mark.parametrize('when_used', ['unless-none', 'json-unless-none'])
+def test_unless_none_serializer_on_schemas_that_accept_none(when_used: str) -> None:
+    """https://github.com/pydantic/pydantic/issues/14263"""
+
+    class Model(BaseModel):
+        any_field: Any = None
+        none_field: None = None
+        literal_field: Literal[1, None] = None
+        optional_field: int | None = None
+        string_field: str = 'value'
+
+        @field_serializer(
+            'any_field', 'none_field', 'literal_field', 'optional_field', 'string_field', when_used=when_used
+        )
+        def serialize(self, value: Any) -> str:
+            return f'<{value}>'
+
+    properties = Model.model_json_schema(mode='serialization')['properties']
+    for field in ('any_field', 'none_field', 'literal_field', 'optional_field'):
+        assert properties[field]['anyOf'] == [{'type': 'null'}, {'type': 'string'}]
+    assert properties['string_field']['type'] == 'string'
+
+    assert Model().model_dump(mode='json') == {
+        'any_field': None,
+        'none_field': None,
+        'literal_field': None,
+        'optional_field': None,
+        'string_field': '<value>',
+    }
+
+
 @pytest.mark.parametrize(
     'wrap',
     [
